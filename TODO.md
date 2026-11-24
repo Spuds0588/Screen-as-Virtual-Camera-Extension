@@ -2,7 +2,7 @@
 
 Living checklist for v1. Update this file as work lands (move items between sections, keep it honest).
 
-Current state: `bash test/run-test.sh` → **51 passed, 0 failed, 0 skipped, exit 0** in a headed Chrome for
+Current state: `bash test/run-test.sh` → **52 passed, 0 failed, 0 skipped, exit 0** in a headed Chrome for
 Testing 158 with the extension loaded. Artifacts: `test/artifacts/results.json`, `harness-live.png`,
 `desktop-picker.png`, `meet-real.png` (the real Meet page the suite reached), plus
 `meet-join-permission-prompt.png` from the investigation of that page.
@@ -13,7 +13,8 @@ Testing 158 with the extension loaded. Artifacts: `test/artifacts/results.json`,
 | --- | --- | --- |
 | Google Meet | `https://meet.google.com/abc-defg-hij` | **real Meet app, no interception**: 200, title "Meet", renders "Check your meeting code" and its own camera/mic prompt. Also asserts the shim camera opening via the page's own `getUserMedia`. `meet.google.com/` answers 200 and client-side navigates to `workspace.google.com/products/meet/`; `/new` and `/landing` go to `accounts.google.com` sign-in |
 | Jitsi | `https://meet.jit.si/` | organic load |
-| Zoom Web | `https://app.zoom.us/wc/home` | organic load, redirects to `/wc/` |
+| Zoom Web | `https://app.zoom.us/wc/home` | organic load, redirects to `/wc/`. Join surface (modal `#join-meeting-modal-meeting-id`, `/wc/<id>/join`) injects and enumerates the virtual camera, but no meeting can be joined without a meeting id — **live-session verdict blocked, see below** |
+| Webex | `https://web.webex.com/meeting` (inside `join-test.webex.com`, and `webex.com/test-meeting.html`) | **live guest meeting reached, no account needed** — the meeting ran on the virtual camera at 1280×720, Webex's own transport stayed `recvonly` because it was alone, see field reports |
 | Teams Web | `https://teams.microsoft.com/` | organic load, redirects to `/v2/` |
 | Whereby | `https://whereby.com/` | organic load |
 
@@ -56,13 +57,22 @@ Testing 158 with the extension loaded. Artifacts: `test/artifacts/results.json`,
   `degradationPreference` as a property instead of via `setParameters`, so Chrome downscaled our 1280x720 to
   320x180. Jitsi's sent resolution (640x360 @ 300 kbps) is Jitsi's own adaptive output for a 1:1 call, not our
   publish setting.
-- **Webex (`web.webex.com`) — detected the camera, then turned video off.** Console evidence from that session:
-  the shim installed, Webex asked for the virtual camera six times, each peer reached `connected` with a live
-  track, and Webex called `track.stop()` immediately afterwards; Webex also logged
-  `Cantina_AvoidGetUserMediaPromptError … avoidGetUserMediaPrompt is true` and
-  `No actualId found for alias device default`. Three fixes shipped and are covered by the suite: camera
-  permission now reports `granted`, the `"default"` alias reaches the virtual camera when the machine has no real
-  webcam, and the track is handed over only once it is unmuted. **Not yet re-tested in a real Webex meeting.**
+- **Webex — verified in a live meeting (2026-11-24).** Reached a real Webex meeting with no account:
+  `webex.com/test-meeting.html` → name + email → `join-test.webex.com/…/meeting/download/<id>` → "Join from
+  browser" → `web.webex.com/meeting` → name, "Start video", "Join meeting". In the meeting Webex's own `<video>`
+  tiles were 1280×720 and its track was `deviceId: vtc-virtual-camera`, label "Screen / Tab + Cam (Virtual)",
+  `readyState: live`, `enabled: true`, `muted: false`; the self-view showed the compositor's "Virtual Camera
+  Ready" card. Webex's own peer connection was `connected` with **all transceivers `recvonly`** and 24 empty
+  senders, so `outbound-rtp` stayed at 0 video frames / 0 bytes (and 0 audio bytes) across 35 s: Webex does not
+  upload while it is the only participant. A second guest is gated by
+  `web.webex.com/guest-enter-password-captcha` in both a clean profile and a second tab, so the publishing half
+  of the evidence needs the user. The three fixes from the earlier field report (camera permission `granted`,
+  `"default"` alias served, unmute-before-hand-over) all held in this meeting.
+- **Zoom Web — blocked on a meeting id (2026-11-24).** `zoom.us/test` ("Test your internet connection by joining
+  a test meeting") sends its `Join` to `zoom.us/join`, which only accepts a Meeting ID / Personal Link;
+  `app.zoom.us/wc/1234567890/join` answers **"This meeting link is invalid (3,001)"**; hosting needs sign-in.
+  Zoom's join surfaces still inject the shim, enumerate `vtc-virtual-camera` first and report the camera
+  permission as `granted`, so nothing failed on our side — there was no meeting to join.
 - Resolution: the compositor is 1280x720 @ 30 fps, sender capped at 2.5 Mbps with `maintain-resolution`. Most
   softness seen in the field is the platform's own downscale of a mostly-static screen; if a call looks soft,
   check `chrome://webrtc-internals` on the sending side before changing the pipeline.
@@ -74,9 +84,17 @@ Testing 158 with the extension loaded. Artifacts: `test/artifacts/results.json`,
       under `--ozone-platform=x11` the portal lists sources without thumbnails. Everything after that click
       (`START_CAPTURE` with `sourceType:"desktop"`, offscreen redemption, compositor, loopback) is the same code
       path the tab tests cover. Evidence: `test/artifacts/desktop-picker.png`.
-- [ ] **Re-test Webex / Zoom Web / Teams Web in a live meeting** after the fixes (camera permission `granted`,
-      unnamed-camera requests served by the shim, unmute-before-hand-over, `maintain-resolution`). If Webex still drops the track, capture its
-      console plus `webrtc-internals` and compare the requested constraints with what the shim serves.
+- [ ] **Webex: a second participant (publishing half of the evidence).** Webex negotiates its meeting transport
+      `recvonly` while it is alone, so `outbound-rtp` cannot climb in a solo guest test meeting. A second guest
+      always hits `https://web.webex.com/guest-enter-password-captcha` (confirmed from a clean Chrome profile and
+      from a second tab of the same profile), which needs a human captcha or a Webex account. Join the same
+      `join-test.webex.com` meeting from a signed-in Webex account and Webex will publish; expect the camera track
+      already proven above (`vtc-virtual-camera`, 1280×720).
+- [ ] **Zoom Web: a meeting id.** No credential-free Zoom meeting exists (`zoom.us/test` → `zoom.us/join`;
+      `app.zoom.us/wc/<id>/join` → "This meeting link is invalid (3,001)"). Supply a Zoom meeting ID/link that
+      admits guests (or a Zoom account to host), then run the same harness used for Jitsi: read
+      `outbound-rtp` from the page's own `RTCPeerConnection` and check the self-view. Zoom asks for a camera with an
+      explicit `deviceId`, so the shim's device list — not its alias rule — is what it will use.
 - [x] **A real Google Meet call.** Done by the user on 2026-11-24: Meet offered "Screen / Tab + Cam (Virtual)",
       the captured window reached the call with the webcam PiP composited in, and the badge showed `LIVE`. The
       automation suite keeps the non-human half (shim + enumeration + a live `getUserMedia` track on the real

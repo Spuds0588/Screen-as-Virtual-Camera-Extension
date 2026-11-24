@@ -3,6 +3,59 @@
 Reverse-chronological log of what actually happened. Keep entries short and factual: what changed, what was
 verified, what broke.
 
+## 2026-11-24 — Webex verified in a live meeting; Zoom Web blocked on a meeting ID (52 pass / 0 fail / 0 skip)
+
+### Webex: a real meeting with no account (works)
+
+The credential-free path, driven end to end in the headed browser:
+
+1. `https://www.webex.com/test-meeting.html` — remove the OneTrust overlay (`#onetrust-consent-sdk`,
+   `.onetrust-pc-dark-filter`), set `#full-name` / `#email-address` through the native value setter, click
+   `a.form_button`. (Typing into the fields with CDP appends to an earlier programmatic fill and the site then
+   rejects the address with "Please enter a valid email address".)
+2. The submit opens the join interstitial in its own tab:
+   `https://join-test.webex.com/wbxmjs/joinservice/sites/join-test/meeting/download/<id>?ST=SUCCESS`.
+3. "Join from browser" loads the web client in `#unified-webclient-iframe` (`https://web.webex.com/meeting`) —
+   same process, cross-origin, so it needs its own CDP execution context, and its buttons/inputs sit behind
+   shadow roots.
+4. Enter a name, "Start video", "Join meeting" → in the meeting ("Join Meeting Test", "Waiting for others to
+   join…").
+
+| Signal | Value |
+| --- | --- |
+| Webex's own `<video>` elements | 2 × 1280×720, playing |
+| track Webex uses | label "Screen / Tab + Cam (Virtual)", `deviceId: vtc-virtual-camera`, `readyState: live`, `enabled: true`, `muted: false` |
+| Webex's peer connections | two created; the meeting one `connected`, **every transceiver `recvonly`**, 24 senders carrying no track |
+| `outbound-rtp` over 35 s | video `framesSent` 0, `bytesSent` 0; audio `bytesSent` 0 |
+| self-view | the compositor's "Virtual Camera Ready" card, readable to the local user |
+
+Read: our pipeline is fine — Webex renders our 1280×720 frames in its own call tile. What stays at zero is
+Webex's **upload**, and it is zero for audio too, because Webex negotiates its meeting transport receive-only
+while it is the only participant. That is the platform's own behaviour, not our shim.
+
+Publishing needs a second participant, and that gate is human-only here: a second guest — from a separate
+Chrome profile without the extension **and** from a second tab of the same profile — always lands on
+`https://web.webex.com/guest-enter-password-captcha`. No extension-side workaround exists for a captcha, so this
+is recorded as an open item rather than looped on.
+
+### Zoom Web: no credential-free meeting exists (blocked)
+
+- `https://zoom.us/test` renders "Join Meeting Test … Test your internet connection by joining a test meeting.
+  **Join**", and that `Join` lands on `https://zoom.us/join`: a Meeting ID / Personal Link form and nothing else.
+- `https://app.zoom.us/wc/1234567890/join` → **"This meeting link is invalid (3,001)"**.
+- `https://app.zoom.us/wc/` has the join modal (`#join-meeting-modal-meeting-id`) and a "Start a New Meeting"
+  that needs sign-in; hosting a meeting requires an account.
+- What still works on Zoom's own surfaces: the shim injects, `vtc-virtual-camera` enumerates first with its
+  label, and the camera permission reports `granted`. There is simply no meeting to join without an id.
+
+Blocker for the user: a Zoom meeting ID/link (any meeting that will admit a guest), or a Zoom account to host one.
+
+### Suite
+
+Added one check — "content scripts reach every platform host in subframes" — because Webex holds its meeting
+inside a cross-origin iframe and a manifest regression there would look exactly like a camera bug.
+`bash test/run-test.sh` → **52 passed, 0 failed, 0 skipped, exit 0**.
+
 ## 2026-11-24 — Jitsi verified end to end in a real call (51 pass / 0 fail / 0 skip)
 
 Joined the user's own room, `https://meet.jit.si/wowletstestthatchromeextension`, in a headed Chrome with the

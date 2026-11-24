@@ -182,9 +182,11 @@ If you cannot run a headed browser (no `DISPLAY`), say so explicitly in your rep
   … avoidGetUserMediaPrompt is true`) need `navigator.permissions.query({name:"camera"})` to report `granted`.
   The shim reports that for the camera only — the virtual camera genuinely never prompts — and leaves microphone
   alone so the real prompt still appears.
-- `deviceId: "default"` is Chrome's alias for the default *real* camera; Webex logged `No actualId found for
-  alias device default` before giving up on video. The shim stands in for `"default"` only when the machine has
-  no real video input, so a machine with a webcam keeps native behaviour.
+- `deviceId: "default"` is Chrome's alias for the default camera; Webex logged `No actualId found for alias
+  device default` before giving up on video. The shim now answers any camera request that names no device or
+  names `"default"` with the virtual camera (invariant 5b) — that is "the default camera", which this extension
+  replaces. A request naming a *different* concrete device still goes native, so a webcam picked in a platform's
+  own menu keeps working.
 - A track straight off a fresh receiver is `muted` until media arrives. Webex stopped ours immediately after
   `connected`, so `inject.js` waits (max 2.5 s) for `unmute`/first frame before resolving `getUserMedia`; a real
   camera hands over an already-live track.
@@ -201,4 +203,24 @@ If you cannot run a headed browser (no `DISPLAY`), say so explicitly in your rep
   `APP.store.getState()["features/base/tracks"]` for the local track and
   `APP.conference._room.rtc.peerConnections` (a **Map**) for `outbound-rtp` stats. Its in-call camera picker is
   `select#videoInput` under Settings → Video.
+- **Webex live recipe (no account needed).** `webex.com/test-meeting.html` → remove the OneTrust overlay
+  (`#onetrust-consent-sdk`, `.onetrust-pc-dark-filter`) → set `#full-name` and `#email-address` with the native
+  value setter (typing with `Input.insertText` after a programmatic fill appends and the site answers "Please
+  enter a valid email address") → click `a.form_button`. The submit opens
+  `join-test.webex.com/wbxmjs/joinservice/sites/join-test/meeting/download/<id>?ST=SUCCESS` in its own tab; click
+  **Join from browser** (not "this browser"), then the web client loads in `#unified-webclient-iframe` on
+  `web.webex.com/meeting`. That iframe is same-process but cross-origin, so read it through its own CDP execution
+  context (`Runtime.executionContextCreated`, origin `web.webex.com`), and walk shadow roots — its buttons live
+  inside custom elements, so a plain `document.querySelectorAll("button")` comes back empty while the surface is
+  clearly rendered.
+- **A solo Webex meeting does not upload.** In a guest test meeting with nobody else, Webex's own peer connection
+  is `connected` with every transceiver `recvonly` and empty senders, so `outbound-rtp` reports 0 video frames,
+  0 video bytes and 0 audio bytes for as long as you watch — while its own call tile renders our 1280×720 frames.
+  That is the platform, not the shim: do not go hunting for a pipeline bug when audio is at zero too. A second
+  guest is gated by `web.webex.com/guest-enter-password-captcha` (clean profile *and* second tab), i.e. human-only.
+- **Zoom Web has no credential-free meeting.** `zoom.us/test` → "Join a Test Meeting" → `Join` lands on
+  `zoom.us/join` (Meeting ID / Personal Link only), and `app.zoom.us/wc/<id>/join` answers "This meeting link is
+  invalid (3,001)". Its join surfaces still inject the shim and enumerate `vtc-virtual-camera` first, so the
+  blocked part is the meeting id, not the extension. Zoom requests the camera with an explicit `deviceId`, so it
+  uses the device list rather than the `"default"` alias rule.
 - `dist/` is generated; never edit it by hand.

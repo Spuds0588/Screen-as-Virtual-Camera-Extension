@@ -10,7 +10,7 @@
 //    DevTools request interception. That exercises the extension's origin gating and content-script
 //    injection on the true origin; it cannot exercise Meet's own app code.
 import { execSync } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -319,6 +319,20 @@ const injected = await waitFor(
   { timeout: 15000 }
 );
 record("inject.js + relay.js install on the page (MAIN + ISOLATED)", !!injected);
+
+// Webex runs its meeting app in an iframe on web.webex.com while the join page sits on
+// join-test.webex.com, and Zoom embeds its client too: every platform host has to get the shim in
+// subframes, not just the top document, or those platforms see the physical camera.
+const builtManifest = JSON.parse(await readFile(join(here, "..", "dist", "dev", "manifest.json"), "utf8"));
+const platformHosts = ["meet.google.com", "zoom.us", "web.webex.com", "meet.jit.si"];
+const scripts = builtManifest.content_scripts || [];
+record(
+  "content scripts reach every platform host in subframes (Webex meets inside an iframe)",
+  scripts.length >= 2 &&
+    scripts.every((s) => s.all_frames === true) &&
+    platformHosts.every((host) => scripts.every((s) => (s.matches || []).some((m) => m.includes(host)))),
+  JSON.stringify(scripts.map((s) => ({ frames: s.all_frames, hosts: (s.matches || []).length })))
+);
 
 const deviceInfo = await evaluate(page, "window.__vtcTest.devices()");
 record(
