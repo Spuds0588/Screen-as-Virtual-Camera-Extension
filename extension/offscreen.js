@@ -366,9 +366,13 @@ async function handleOffer(msg) {
       params.encodings[0].maxBitrate = MAX_BITRATE;
       params.encodings[0].maxFramerate = FPS;
       params.encodings[0].priority = "high";
-      await transceiver.sender.setParameters(params);
+      params.encodings[0].scaleResolutionDownBy = 1;
     }
-    transceiver.sender.degradationPreference = "maintain-resolution";
+    // degradationPreference only exists on the parameter object. Assigning it on the sender looks
+    // right and does nothing, which let Chrome downscale this 1280x720 feed to 320x180 for a mostly
+    // static screen (measured on a real Jitsi room through the page's own RTCPeerConnection stats).
+    params.degradationPreference = "maintain-resolution";
+    await transceiver.sender.setParameters(params);
   } catch (err) {
     console.warn("[VTC:offscreen] Could not tune the video sender:", err.message);
   }

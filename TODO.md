@@ -45,6 +45,17 @@ Testing 158 with the extension loaded. Artifacts: `test/artifacts/results.json`,
   webcam PiP composited in the corner, badge `LIVE`, and both the captured tab and the PiP rendering in Meet.
   Text looks mirrored **in your own self-view only** (Meet mirrors the local tile with CSS); remote participants
   see it correctly. `test/artifacts/` keeps the harness proof; the user's call screenshots are the field proof.
+- **Jitsi — verified end to end in a real call (2026-11-24).** Room
+  `https://meet.jit.si/wowletstestthatchromeextension`, two participants, extension loaded. The room's own state
+  showed the local camera track as `deviceId: vtc-virtual-camera`, label "Screen / Tab + Cam (Virtual)",
+  `readyState: live`, `enabled: true`, `muted: false`, track settings 1280x720, and Jitsi's `outbound-rtp` video
+  stats climbed 0 → **268 frames over 30 s** (~9 fps sent) at 640x360, targetBitrate 300 kbps,
+  `qualityLimitationReason: none`. Screenshot: the call tile is the compositor's "Virtual Camera Ready" card.
+  Two implementation bugs were found and fixed by this test: Jitsi asks for a camera **without a `deviceId`**
+  (the shim skipped it and Chrome handed over the physical webcam) and the loopback sender set
+  `degradationPreference` as a property instead of via `setParameters`, so Chrome downscaled our 1280x720 to
+  320x180. Jitsi's sent resolution (640x360 @ 300 kbps) is Jitsi's own adaptive output for a 1:1 call, not our
+  publish setting.
 - **Webex (`web.webex.com`) — detected the camera, then turned video off.** Console evidence from that session:
   the shim installed, Webex asked for the virtual camera six times, each peer reached `connected` with a live
   track, and Webex called `track.stop()` immediately afterwards; Webex also logged
@@ -63,8 +74,8 @@ Testing 158 with the extension loaded. Artifacts: `test/artifacts/results.json`,
       under `--ozone-platform=x11` the portal lists sources without thumbnails. Everything after that click
       (`START_CAPTURE` with `sourceType:"desktop"`, offscreen redemption, compositor, loopback) is the same code
       path the tab tests cover. Evidence: `test/artifacts/desktop-picker.png`.
-- [ ] **Re-test Webex / Zoom Web / Teams Web in a live meeting** after the Webex fixes (camera permission
-      `granted`, `"default"` alias fallback, unmute-before-hand-over). If Webex still drops the track, capture its
+- [ ] **Re-test Webex / Zoom Web / Teams Web in a live meeting** after the fixes (camera permission `granted`,
+      unnamed-camera requests served by the shim, unmute-before-hand-over, `maintain-resolution`). If Webex still drops the track, capture its
       console plus `webrtc-internals` and compare the requested constraints with what the shim serves.
 - [x] **A real Google Meet call.** Done by the user on 2026-11-24: Meet offered "Screen / Tab + Cam (Virtual)",
       the captured window reached the call with the webcam PiP composited in, and the badge showed `LIVE`. The

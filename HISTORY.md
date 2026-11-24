@@ -3,6 +3,47 @@
 Reverse-chronological log of what actually happened. Keep entries short and factual: what changed, what was
 verified, what broke.
 
+## 2026-11-24 — Jitsi verified end to end in a real call (51 pass / 0 fail / 0 skip)
+
+Joined the user's own room, `https://meet.jit.si/wowletstestthatchromeextension`, in a headed Chrome with the
+extension loaded (the user signed in on their side to clear Jitsi's moderator lobby — `meet.jit.si` rooms require
+an account for the moderator). Two participants, real call.
+
+Jitsi's own state, read from the page:
+
+| Signal | Value |
+| --- | --- |
+| `features/base/tracks` local camera | `deviceId: vtc-virtual-camera`, label "Screen / Tab + Cam (Virtual)" |
+| track state | `readyState: live`, `enabled: true`, `muted: false`, settings `1280x720` |
+| `outbound-rtp` video (30 s window) | `framesSent` 0 → **268** (~9 fps), 640x360, targetBitrate 300 kbps |
+| quality | `qualityLimitationReason: none` |
+| call tile | the compositor's "Virtual Camera Ready" card, visible to the other participant |
+
+Two real bugs were found by this test and fixed in the shim rather than documented:
+
+1. **Jitsi never sends a `deviceId`.** It asks for `{video:{width:{ideal:1280},height:{ideal:720},frameRate:{min:15,max:30}}}`,
+   which the shim fell through to the native camera — Chrome handed over the physical Integrated Camera (which then
+   shows up in the room as a real webcam, or fails with `NotAllowedError` when the camera permission is not
+   granted). `inject.js` now treats "a camera, no device named" (and `deviceId:"default"`, Webex's fallback) as the
+   virtual camera. A request naming a *different* concrete device still goes native, so a webcam chosen in a
+   platform's own menu keeps working.
+2. **`degradationPreference` was set as a sender property**, which is a silent no-op — it belongs to the parameter
+   object. Chrome therefore downscaled the compositor's 1280x720 to **320x180** on the loopback (measured on this
+   room before the fix). Now set through `setParameters({...params, degradationPreference: "maintain-resolution"})`
+   and the page receives 1280x720.
+
+Resolution answer for the "is our output the soft one" question: our publish is 1280x720 @ 30 fps with a 2.5 Mbps
+sender cap; the page receives 1280x720. Jitsi then *sends* 640x360 @ ~9 fps with a 300 kbps target and reports no
+quality limitation — that downscale is Jitsi's own adaptive output for a 1:1 call, platform-side, not our pipeline.
+
+Mirroring, again: Jitsi flips the local self-view with CSS (`flipVideoX`), so the "Virtual Camera Ready" card reads
+backwards in *your* window while the host/other participants see it the right way round — confirmed against the
+user's host-side screenshot. That is not a feed defect; the popup's "Mirror output" toggle trades the two sides
+and stays off by default.
+
+`bash test/run-test.sh` → **51 passed, 0 failed, 0 skipped, exit 0** after these changes (the "names no device"
+check now expects the virtual camera unconditionally).
+
 ## 2026-11-24 — field report fixes: prompt-averse platforms, `"default"` alias, mirror toggle (51 pass / 0 fail / 0 skip)
 
 First real-meeting report. Google Meet worked end to end (captured window as camera + PiP, badge `LIVE`). Webex

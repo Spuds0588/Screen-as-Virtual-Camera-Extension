@@ -346,8 +346,9 @@ record(
   cameraPermission
 );
 
-// A "default" alias must still reach the virtual camera on a machine with no real webcam, which is
-// where Webex's "No actualId found for alias device default" path ends up.
+// A request that names no device (Jitsi asks for `{video:{width,height,frameRate}}`, Webex falls back
+// to `deviceId: "default"`) must reach the virtual camera: that is the request shape platforms use
+// when they mean "the default camera", i.e. the physical webcam this extension replaces.
 const realCameras = deviceInfo.devices.filter((d) => d.deviceId !== "vtc-virtual-camera");
 const aliasProbe = await evaluate(
   page,
@@ -365,8 +366,8 @@ const aliasProbe = await evaluate(
   { userGesture: true }
 );
 record(
-  "the \"default\" camera alias reaches the virtual camera when no real camera exists",
-  realCameras.length ? aliasProbe?.deviceId !== "vtc-virtual-camera" : aliasProbe?.deviceId === "vtc-virtual-camera",
+  "a camera request that names no device gets the virtual camera",
+  aliasProbe?.deviceId === "vtc-virtual-camera",
   JSON.stringify({ realCameras: realCameras.map((d) => d.label), probe: aliasProbe })
 );
 

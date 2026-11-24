@@ -47,6 +47,12 @@ Key invariants:
    optional setup: a throw before it silently removes the offer handler and every `getUserMedia` then times out.
 5. **Webcam permission belongs to the extension origin.** Offscreen documents cannot prompt, so the user grants
    camera access on a real extension page (`popup.html?mode=grant`). Keep the grant flow.
+5b. **A camera request that names no device is ours.** Platforms ask in two shapes: an explicit
+   `deviceId` (Meet, Zoom) or just `{video:{width,height,frameRate}}` / `deviceId:"default"` (Jitsi, Webex).
+   The second shape means "Chrome's default camera", i.e. the physical webcam this extension exists to
+   replace, so `inject.js` serves the virtual camera for it. A request that names a *different* concrete
+   device still goes to the real camera, so picking your webcam in a platform's menu keeps your webcam.
+   Removing this is what made Jitsi show its own fallback and never start our track.
 6. **Never leave the webcam LED on.** Every `stop` path stops the webcam tracks too.
 7. Messages use an explicit `target` (`"background"` / `"offscreen"`) or `source` (`"vtc-relay"`) tag. A listener
    that is not addressed must `return false` so it does not steal `sendResponse`.
@@ -185,4 +191,14 @@ If you cannot run a headed browser (no `DISPLAY`), say so explicitly in your rep
 - Meet and Zoom mirror your own self-view with CSS, so shared text reads backwards **to you** while everyone else
   sees it the right way round. The popup's "Mirror output" checkbox flips the composited frame for users who want
   their own preview readable; it reverses the feed for everyone else, so it is off by default.
+- `degradationPreference` is **not** a property of `RTCRtpSender`; assigning it there is a silent no-op. It must
+  go through `sender.setParameters({...params, degradationPreference: "maintain-resolution"})`. Before that fix
+  Chrome downscaled the compositor's 1280x720 to **320x180** on the loopback (measured on a real Jitsi room);
+  after it the page receives 1280x720.
+- A real Jitsi join cannot be automated inside `run-test.sh`: `meet.jit.si` rooms need a signed-in moderator to
+  clear the lobby, and the Jitsi deployment used for the manual check (`meet.ffmuc.net`) is not in the shipped
+  match list, so it needs the popup's "Enable on this page". Jitsi's own state is readable from the page:
+  `APP.store.getState()["features/base/tracks"]` for the local track and
+  `APP.conference._room.rtc.peerConnections` (a **Map**) for `outbound-rtp` stats. Its in-call camera picker is
+  `select#videoInput` under Settings → Video.
 - `dist/` is generated; never edit it by hand.

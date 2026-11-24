@@ -347,24 +347,25 @@
     });
   }
 
-  async function defaultAliasWithoutCamera(video) {
+  // Some platforms never name a device: Jitsi asks for `{video:{width,height,frameRate}}` and Webex
+  // falls back to `deviceId: "default"`. Both mean "whatever camera Chrome has by default", which is
+  // the physical webcam — the one thing this extension exists to replace. Those requests get the
+  // virtual camera. A request that names a specific *other* device still goes to the real one, so a
+  // user who picks their webcam in a platform's menu keeps getting their webcam.
+  function wantsAnyCamera(video) {
     if (!video || typeof video !== "object") return false;
-    if (!flattenDeviceIds(video.deviceId, []).includes("default")) return false;
-    const devices = await patchedEnumerateDevices().catch(() => []);
-    // "default" means the real default webcam. Only stand in when the machine has no camera at all,
-    // which is the case where the request would otherwise fail with NotFoundError (Webex logs
-    // "No actualId found for alias device default. Using it as is" right before it gives up).
-    return !devices.some((device) => device.kind === "videoinput" && device.deviceId !== VIRTUAL_ID);
+    const ids = flattenDeviceIds(video.deviceId, []);
+    return ids.length === 0 || ids.includes("default");
   }
 
   async function patchedGetUserMedia(constraints) {
     const video = constraints && constraints.video;
     const virtualRequested = wantsVirtualCamera(video);
-    if (!virtualRequested && !(await defaultAliasWithoutCamera(video))) {
+    if (!virtualRequested && !wantsAnyCamera(video)) {
       return patchedGetUserMedia.native.call(navigator.mediaDevices, constraints);
     }
     if (!virtualRequested) {
-      console.log('[VTC:inject] "default" camera alias with no real camera; serving the virtual one');
+      console.log("[VTC:inject] Page asked for a camera without naming one; serving the virtual camera");
     }
 
     console.log("[VTC:inject] Intercepted getUserMedia for the virtual camera", constraints);
