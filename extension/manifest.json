@@ -1,0 +1,102 @@
+{
+  "manifest_version": 3,
+  "name": "Screen as Virtual Camera",
+  "version": "1.0.0",
+  "description": "Share a tab, window or screen as a virtual camera in web meeting platforms (Meet, Zoom Web, Teams, Jitsi, Webex, ...).",
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "tabCapture", "desktopCapture", "offscreen", "scripting", "storage"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Virtual Camera Controls"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "toggle-share": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "Start or stop sharing the current tab as the virtual camera"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://meet.google.com/*",
+        "*://*.zoom.us/*",
+        "*://zoom.us/*",
+        "*://teams.microsoft.com/*",
+        "*://*.teams.microsoft.com/*",
+        "*://teams.live.com/*",
+        "*://teams.cloud.microsoft/*",
+        "*://meet.jit.si/*",
+        "*://*.jit.si/*",
+        "*://8x8.vc/*",
+        "*://*.8x8.vc/*",
+        "*://whereby.com/*",
+        "*://*.whereby.com/*",
+        "*://web.webex.com/*",
+        "*://*.webex.com/*",
+        "*://discord.com/*",
+        "*://app.slack.com/*",
+        "*://app.gather.town/*",
+        "*://*.gather.town/*",
+        "*://*.streamyard.com/*",
+        "*://*.riverside.fm/*",
+        "*://*.bluejeans.com/*",
+        "*://*.gotomeeting.com/*",
+        "*://*.zohomeeting.com/*",
+        "*://*.ringcentral.com/*",
+        "*://web.skype.com/*",
+        "*://*.chime.aws/*",
+        "*://web.whatsapp.com/*",
+        "*://web.telegram.org/*"
+      ],
+      "js": ["inject.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true,
+      "match_origin_as_fallback": true
+    },
+    {
+      "matches": [
+        "*://meet.google.com/*",
+        "*://*.zoom.us/*",
+        "*://zoom.us/*",
+        "*://teams.microsoft.com/*",
+        "*://*.teams.microsoft.com/*",
+        "*://teams.live.com/*",
+        "*://teams.cloud.microsoft/*",
+        "*://meet.jit.si/*",
+        "*://*.jit.si/*",
+        "*://8x8.vc/*",
+        "*://*.8x8.vc/*",
+        "*://whereby.com/*",
+        "*://*.whereby.com/*",
+        "*://web.webex.com/*",
+        "*://*.webex.com/*",
+        "*://discord.com/*",
+        "*://app.slack.com/*",
+        "*://app.gather.town/*",
+        "*://*.gather.town/*",
+        "*://*.streamyard.com/*",
+        "*://*.riverside.fm/*",
+        "*://*.bluejeans.com/*",
+        "*://*.gotomeeting.com/*",
+        "*://*.zohomeeting.com/*",
+        "*://*.ringcentral.com/*",
+        "*://web.skype.com/*",
+        "*://*.chime.aws/*",
+        "*://web.whatsapp.com/*",
+        "*://web.telegram.org/*"
+      ],
+      "js": ["relay.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": true,
+      "match_origin_as_fallback": true
+    }
+  ]
+}

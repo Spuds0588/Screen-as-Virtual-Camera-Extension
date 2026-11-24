@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        width: 268px;
+        margin: 0;
+        padding: 12px;
+        font: 13px/1.4 system-ui, -apple-system, sans-serif;
+        color: #0f172a;
+        background: #f8fafc;
+      }
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 10px;
+        font-weight: 600;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #94a3b8;
+        flex: none;
+      }
+      .dot.live {
+        background: #16a34a;
+      }
+      label.row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+        cursor: pointer;
+      }
+      .hint {
+        font-size: 11px;
+        color: #b45309;
+        margin: -4px 0 8px 22px;
+      }
+      button {
+        width: 100%;
+        padding: 8px 10px;
+        margin-bottom: 6px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        background: #fff;
+        color: #0f172a;
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        background: #f1f5f9;
+      }
+      button.primary {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #fff;
+      }
+      button.primary:hover:not(:disabled) {
+        background: #1d4ed8;
+      }
+      button.danger {
+        color: #dc2626;
+        border-color: #fecaca;
+      }
+      button.link {
+        border: none;
+        background: none;
+        color: #475569;
+        font-size: 11.5px;
+        text-decoration: underline;
+        padding: 2px 0;
+        margin-top: 2px;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .error {
+        margin-top: 8px;
+        font-size: 11.5px;
+        color: #b91c1c;
+        word-break: break-word;
+      }
+      .footer {
+        margin-top: 8px;
+        font-size: 11px;
+        color: #64748b;
+      }
+      .grantMsg {
+        font-size: 14px;
+        margin: 40px 12px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="status"><span id="dot" class="dot"></span><span id="statusText">Checking…</span></div>
+      <label class="row">
+        <input id="camToggle" type="checkbox" />
+        <span>Webcam PiP overlay</span>
+      </label>
+      <div id="camHint" class="hint" hidden>Needs one-time camera permission</div>
+      <button id="tabBtn" class="primary">Share This Tab</button>
+      <button id="screenBtn">Share Screen / Window</button>
+      <button id="stopBtn" class="danger" disabled>Stop Sharing</button>
+      <button id="enableBtn" class="link">Enable on this page (other meeting sites)</button>
+      <div class="footer">Pick the virtual camera in the meeting's camera menu.</div>
+    </div>
+    <!-- Outside #app: grant/pick modes replace #app, and errors must still be renderable there. -->
+    <div id="errorText" class="error" hidden></div>
+    <script src="popup.js"></script>
+  </body>
+</html>

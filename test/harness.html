@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>VTC test harness</title>
+    <style>
+      :root { --probe: #00ff00; }
+      html, body { margin: 0; height: 100%; }
+      body { background: #101014; color: #e5e7eb; font: 14px/1.45 system-ui, sans-serif; overflow: hidden; }
+      body.magenta { background: #ff00ff; color: #000; }
+      #probe { position: absolute; left: 40px; top: 300px; width: 200px; height: 200px; background: var(--probe); }
+      #panel { position: absolute; right: 16px; top: 16px; width: 420px; padding: 12px; background: rgba(0,0,0,0.72); border-radius: 8px; }
+      #out { width: 100%; border-radius: 6px; background: #000; display: block; }
+      pre { margin: 8px 0 0; font: 11px/1.35 ui-monospace, monospace; white-space: pre-wrap; color: #a7f3d0; }
+      button { font: inherit; padding: 4px 8px; margin: 0 4px 4px 0; border-radius: 5px; border: 1px solid #4b5563; background: #1f2937; color: #e5e7eb; cursor: pointer; }
+      #devices { max-height: 84px; overflow: auto; }
+    </style>
+  </head>
+  <body>
+    <div id="probe"></div>
+    <div id="panel">
+      <strong>Virtual camera harness</strong>
+      <div id="devices"></div>
+      <div style="margin: 8px 0">
+        <button id="startBtn">Start camera</button>
+        <button id="stopBtn">Stop camera</button>
+        <button id="snapBtn">Snapshot</button>
+      </div>
+      <video id="out" autoplay playsinline muted></video>
+      <pre id="stats">idle</pre>
+    </div>
+    <script>
+      (() => {
+        const CAP_W = 1280;
+        const CAP_H = 720;
+        const VIRTUAL_LABEL_HINT = "(Virtual)";
+
+        const out = document.getElementById("out");
+        const statsEl = document.getElementById("stats");
+        const devicesEl = document.getElementById("devices");
+        const sampleCanvas = document.createElement("canvas");
+        const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
+
+        let stream = null;
+        let error = null;
+        let frames = 0;
+        let frameStamps = [];
+
+        function startCounting() {
+          if (!out.requestVideoFrameCallback) return;
+          const step = () => {
+            frames += 1;
+            frameStamps.push(performance.now());
+            if (frameStamps.length > 90) frameStamps.shift();
+            if (out.srcObject) out.requestVideoFrameCallback(step);
+          };
+          out.requestVideoFrameCallback(step);
+        }
+        startCounting();
+
+        function fps() {
+          if (frameStamps.length < 3) return 0;
+          const span = (frameStamps[frameStamps.length - 1] - frameStamps[0]) / 1000;
+          return span > 0 ? Math.round(((frameStamps.length - 1) / span) * 10) / 10 : 0;
+        }
+
+        function virtualDeviceId(list) {
+          const device = list.find((d) => d.label.includes(VIRTUAL_LABEL_HINT));
+          return device ? device.deviceId : null;
+        }
+
+        async function listDevices() {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          return devices
+            .filter((d) => d.kind === "videoinput")
+            .map((d) => ({ deviceId: d.deviceId, label: d.label }));
+        }
+
+        // Map a point in this page to normalized coords of the composited 1280x720 frame
+        // (the compositor letterboxes the captured viewport into 16:9 with "contain").
+        function toNormalized(clientX, clientY) {
+          const vw = window.innerWidth || 1;
+          const vh = window.innerHeight || 1;
+          const scale = Math.min(CAP_W / vw, CAP_H / vh);
+          const dw = vw * scale;
+          const dh = vh * scale;
+          const ox = (CAP_W - dw) / 2;
+          const oy = (CAP_H - dh) / 2;
+          return [(ox + clientX * scale) / CAP_W, (oy + clientY * scale) / CAP_H];
+        }
+
+        function sampleNormalized(nx, ny, spread = 0.02) {
+          if (!out.videoWidth || !out.videoHeight) return null;
+          sampleCanvas.width = out.videoWidth;
+          sampleCanvas.height = out.videoHeight;
+          sampleCtx.drawImage(out, 0, 0, out.videoWidth, out.videoHeight);
+          const x = Math.round(Math.min(1, Math.max(0, nx)) * (out.videoWidth - 1));
+          const y = Math.round(Math.min(1, Math.max(0, ny)) * (out.videoHeight - 1));
+          const size = Math.max(1, Math.round(spread * Math.min(out.videoWidth, out.videoHeight)));
+          const x0 = Math.max(0, Math.min(out.videoWidth - size, x - size / 2));
+          const y0 = Math.max(0, Math.min(out.videoHeight - size, y - size / 2));
+          const data = sampleCtx.getImageData(x0, y0, size, size).data;
+          let r = 0, g = 0, b = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            r += data[i]; g += data[i + 1]; b += data[i + 2];
+          }
+          const pixels = data.length / 4;
+          return [Math.round(r / pixels), Math.round(g / pixels), Math.round(b / pixels)];
+        }
+
+        function probePoints() {
+          const rect = document.getElementById("probe").getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          const [nx, ny] = toNormalized(cx, cy);
+          return { nx, ny };
+        }
+
+        function render(snap) {
+          const deviceLines = snap.devices
+            .map((d) => `${d.label || "(no label)"}  [${d.deviceId.slice(0, 18)}]`)
+            .join("\n");
+          devicesEl.textContent = deviceLines || "(no video inputs)";
+          statsEl.textContent = JSON.stringify(
+            {
+              error: snap.error,
+              size: `${snap.videoWidth}x${snap.videoHeight}`,
+              fps: snap.fps,
+              probe: snap.probe,
+              track: snap.track
+            },
+            null,
+            2
+          );
+        }
+
+        async function snapshot() {
+          const devices = await listDevices().catch(() => []);
+          const { nx, ny } = probePoints();
+          const track = stream ? stream.getVideoTracks()[0] : null;
+          const snap = {
+            error,
+            devices,
+            videoWidth: out.videoWidth,
+            videoHeight: out.videoHeight,
+            frames,
+            fps: fps(),
+            probe: { expected: [0, 255, 0], at: [Number(nx.toFixed(3)), Number(ny.toFixed(3))], got: sampleNormalized(nx, ny) },
+            track: track
+              ? {
+                  label: track.label,
+                  readyState: track.readyState,
+                  settings: JSON.parse(JSON.stringify(track.getSettings()))
+                }
+              : null
+          };
+          render(snap);
+          return snap;
+        }
+
+        function waitForFrames(target, timeoutMs) {
+          return new Promise((resolve) => {
+            const started = performance.now();
+            const check = () => {
+              if (frames >= target || performance.now() - started > timeoutMs) resolve(frames);
+              else setTimeout(check, 100);
+            };
+            check();
+          });
+        }
+
+        window.__vtcTest = {
+          async devices() {
+            const all = await listDevices();
+            return { devices: all, virtualId: virtualDeviceId(all), injected: !!window.__vtcInjected };
+          },
+
+          async start() {
+            error = null;
+            frames = 0;
+            frameStamps = [];
+            try {
+              const all = await listDevices();
+              const deviceId = virtualDeviceId(all);
+              if (!deviceId) throw new Error("virtual camera not present in enumerateDevices()");
+              if (stream) stream.getTracks().forEach((t) => t.stop());
+              stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } } });
+              out.srcObject = stream;
+              await out.play();
+              await waitForFrames(20, 8000);
+            } catch (err) {
+              error = `${err.name}: ${err.message}`;
+            }
+            return snapshot();
+          },
+
+          // Sample any point of the received frame by normalized coordinates (0..1), e.g. the
+          // webcam bubble area. Used by the driver to assert the PiP layer is really composited.
+          sample(nx, ny) {
+            return sampleNormalized(nx, ny, 0.03);
+          },
+
+          async stop() {
+            if (stream) stream.getTracks().forEach((t) => t.stop());
+            stream = null;
+            out.srcObject = null;
+            frames = 0;
+            frameStamps = [];
+            return snapshot();
+          },
+
+          snapshot
+        };
+
+        document.getElementById("startBtn").addEventListener("click", () => window.__vtcTest.start());
+        document.getElementById("stopBtn").addEventListener("click", () => window.__vtcTest.stop());
+        document.getElementById("snapBtn").addEventListener("click", () => window.__vtcTest.snapshot());
+
+        if (new URLSearchParams(location.search).get("bg") === "magenta") {
+          document.body.classList.add("magenta");
+        }
+        snapshot();
+      })();
+    </script>
+  </body>
+</html>

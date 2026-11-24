@@ -1,0 +1,6 @@
+dist/
+.chrome/
+test/artifacts/
+node_modules/
+*.log
+.chrome-profile/
