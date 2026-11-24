@@ -2,6 +2,7 @@
 
 const OFFSCREEN_URL = "offscreen.html";
 const BADGE_LIVE_COLOR = "#16a34a";
+const MIRROR_KEY = "mirrorOutput";
 
 let creatingOffscreen = null;
 
@@ -32,6 +33,13 @@ async function ensureOffscreen() {
       });
   }
   await creatingOffscreen;
+  // The compositor has no chrome.storage of its own, so hand it the persisted setting.
+  await syncMirror().catch((err) => console.warn("[VTC:bg] Mirror sync failed:", err.message));
+}
+
+async function syncMirror() {
+  const stored = await chrome.storage.local.get(MIRROR_KEY).catch(() => ({}));
+  return sendToOffscreen({ type: "SET_MIRROR", mirror: stored?.[MIRROR_KEY] === true });
 }
 
 // Keep the compositor alive from the moment the extension loads: creating it lazily raced with a
@@ -148,6 +156,10 @@ async function handleBackgroundMessage(msg, sender) {
 
     case "SET_CAM":
       return sendToOffscreen({ type: "SET_CAM", camEnabled: !!msg.camEnabled });
+
+    case "SET_MIRROR":
+      await chrome.storage.local.set({ [MIRROR_KEY]: !!msg.mirror });
+      return sendToOffscreen({ type: "SET_MIRROR", mirror: !!msg.mirror });
 
     case "STOP_CAPTURE":
       return stopCapture();

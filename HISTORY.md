@@ -3,6 +3,44 @@
 Reverse-chronological log of what actually happened. Keep entries short and factual: what changed, what was
 verified, what broke.
 
+## 2026-11-24 — field report fixes: prompt-averse platforms, `"default"` alias, mirror toggle (51 pass / 0 fail / 0 skip)
+
+First real-meeting report. Google Meet worked end to end (captured window as camera + PiP, badge `LIVE`). Webex
+listed the virtual camera but turned video off when it was selected. Console from that session showed three
+things worth fixing, and all three now have a suite check:
+
+- Webex: `Cantina_AvoidGetUserMediaPromptError … avoidGetUserMediaPrompt is true` — it refuses to call
+  `getUserMedia` while `navigator.permissions.query({name:"camera"})` says `prompt`. The shim now reports the
+  **camera** permission as `granted` (it genuinely never prompts) and leaves microphone alone. Every platform
+  check asserts `state === "granted"` (5 new PASSes).
+- Webex: `No actualId found for alias device default. Using it as is` — it falls back to `deviceId: "default"`,
+  which means the *real* default webcam. The shim now stands in for `"default"` **only when the machine has no
+  real video input**, and the virtual camera is now the **first** video input rather than the last (new harness
+  checks for both).
+- Webex: each of its six attempts reached `[VTC:inject] Peer state … connected` with a live track and then
+  `Virtual camera session stopped` — it stopped the track immediately. A track off a fresh receiver is `muted`
+  until media arrives, so `inject.js` now waits (max 2.5 s) for `unmute`/first frame before resolving
+  `getUserMedia`, the way a real camera hands over an already-live track.
+
+Mirroring: the captured text looks backwards *in your own self-view* because Meet/Zoom mirror the local tile with
+CSS; remote participants get the correct orientation. The "LIVE" pill is drawn into our own frame and was mirrored
+too, which is the proof it is the page's self-view transform and not our pixels. Added a **Mirror output**
+checkbox to the popup for people who want their own preview readable; it is off by default because it reverses
+the feed for everyone else.
+
+Implementation notes worth remembering:
+
+- `chrome.storage` is **undefined in the offscreen document** (confirmed over CDP: `typeof chrome.storage ===
+  "undefined"`). My first version called it at the top of `offscreen.js`, which threw before
+  `chrome.runtime.onMessage` was registered — every `getUserMedia` then failed with `AbortError: Timed out
+  connecting to the virtual camera` and the placeholder checks went red. The flag now lives in the service worker
+  and is pushed to the compositor with `SET_MIRROR` (including on creation, so it survives restarts).
+- New checks: first video input, camera permission `granted`, `"default"` alias, mirror flip (the PiP bubble must
+  appear on the opposite side of the sampled frame), and the popup checkbox reaching the compositor through the
+  real message path.
+- `bash test/run-test.sh` → **51 passed, 0 failed, 0 skipped, exit 0**. Webex itself still needs a live re-test;
+the three causes are evidenced in its console, not yet confirmed against a real Webex call.
+
 ## 2026-11-24 — real Google Meet page reached under automation (41 pass / 0 fail / 0 skip)
 
 Meet is no longer checked on harness HTML served at its origin: the suite loads **Meet's own app** at

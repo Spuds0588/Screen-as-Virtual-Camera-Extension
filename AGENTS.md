@@ -41,6 +41,10 @@ Key invariants:
 4b. **Frames come from WebCodecs, not `captureStream()`.** An offscreen document is a hidden page: a captured
    canvas there emits about one frame. `offscreen.js` therefore writes `VideoFrame(canvas)` into a
    `MediaStreamTrackGenerator` at 30 fps (`canvas.captureStream` remains only as a fallback).
+4c. **The offscreen document has no `chrome.storage`** (`typeof chrome.storage === "undefined"` there — verified
+   over CDP). Settings the compositor needs are persisted in the service worker and pushed in with `SET_MIRROR`.
+   Never call `chrome.storage` from `offscreen.js`, and keep the `chrome.runtime.onMessage` registration above
+   optional setup: a throw before it silently removes the offer handler and every `getUserMedia` then times out.
 5. **Webcam permission belongs to the extension origin.** Offscreen documents cannot prompt, so the user grants
    camera access on a real extension page (`popup.html?mode=grant`). Keep the grant flow.
 6. **Never leave the webcam LED on.** Every `stop` path stops the webcam tracks too.
@@ -115,6 +119,12 @@ matter when editing that part of the driver:
 - The Meet check also opens the shim's camera through the page's own `getUserMedia` and asserts a live track with
   `deviceId: "vtc-virtual-camera"`, which is the closest automatable proxy for Meet's device picker (the real
   picker needs a valid meeting, i.e. an account).
+- Every platform check also asserts `navigator.permissions.query({name:"camera"}).state === "granted"`, because
+  that is what makes prompt-averse platforms (Webex) call `getUserMedia` at all.
+- The harness additionally asserts that the virtual camera is the **first** video input, that a
+  `deviceId: "default"` request reaches it on a machine without a real webcam, and that the mirror flag moves the
+  webcam bubble to the opposite side of the received frame (sampled through `__vtcTest.sample`). The popup's
+  checkbox is clicked through CDP to prove the popup → background → compositor path.
 - Meet throws its own `_.mF` / `_.pRh` promise rejections from `/scs/mss-static/...MeetingsDesktopUi...`; they
   reproduce in a Chrome **without** the extension. The driver therefore classifies exceptions: only those whose
   URL or stack points at `chrome-extension://` fail the "no uncaught exceptions from the shim" check.
@@ -162,4 +172,17 @@ If you cannot run a headed browser (no `DISPLAY`), say so explicitly in your rep
   `Page.bringToFront` and wait before capturing a platform artifact (the driver retries once if the PNG is tiny).
 - `run-test.sh` refuses to start when something already answers on the CDP port: a leftover Chrome otherwise
   makes the driver attach to the wrong browser and the failure looks like "our service worker never appeared".
+- Platforms that refuse to call `getUserMedia` while it would prompt (Webex: `Cantina_AvoidGetUserMediaPromptError
+  … avoidGetUserMediaPrompt is true`) need `navigator.permissions.query({name:"camera"})` to report `granted`.
+  The shim reports that for the camera only — the virtual camera genuinely never prompts — and leaves microphone
+  alone so the real prompt still appears.
+- `deviceId: "default"` is Chrome's alias for the default *real* camera; Webex logged `No actualId found for
+  alias device default` before giving up on video. The shim stands in for `"default"` only when the machine has
+  no real video input, so a machine with a webcam keeps native behaviour.
+- A track straight off a fresh receiver is `muted` until media arrives. Webex stopped ours immediately after
+  `connected`, so `inject.js` waits (max 2.5 s) for `unmute`/first frame before resolving `getUserMedia`; a real
+  camera hands over an already-live track.
+- Meet and Zoom mirror your own self-view with CSS, so shared text reads backwards **to you** while everyone else
+  sees it the right way round. The popup's "Mirror output" checkbox flips the composited frame for users who want
+  their own preview readable; it reverses the feed for everyone else, so it is off by default.
 - `dist/` is generated; never edit it by hand.

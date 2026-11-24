@@ -327,6 +327,49 @@ record(
   JSON.stringify(deviceInfo.devices.map((d) => d.label))
 );
 
+record(
+  "virtual camera is the first video input the page sees",
+  deviceInfo.devices[0]?.deviceId === "vtc-virtual-camera",
+  JSON.stringify(deviceInfo.devices.map((d) => d.deviceId))
+);
+
+// Webex refuses to touch a camera while it believes a prompt would appear
+// ("Cantina_AvoidGetUserMediaPromptError ... avoidGetUserMediaPrompt is true"), so the shim reports
+// the camera permission as granted.
+const cameraPermission = await evaluate(
+  page,
+  "navigator.permissions.query({name:'camera'}).then(s => s.state).catch(e => 'ERR ' + e.message)"
+);
+record(
+  "camera permission reports granted so platforms skip their prompt guard",
+  cameraPermission === "granted",
+  cameraPermission
+);
+
+// A "default" alias must still reach the virtual camera on a machine with no real webcam, which is
+// where Webex's "No actualId found for alias device default" path ends up.
+const realCameras = deviceInfo.devices.filter((d) => d.deviceId !== "vtc-virtual-camera");
+const aliasProbe = await evaluate(
+  page,
+  `(async () => {
+     try {
+       const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: "default" } });
+       const track = stream.getVideoTracks()[0];
+       const out = { label: track.label, deviceId: track.getSettings().deviceId };
+       stream.getTracks().forEach((t) => t.stop());
+       return out;
+     } catch (e) {
+       return { error: e.name + ": " + e.message };
+     }
+   })()`,
+  { userGesture: true }
+);
+record(
+  "the \"default\" camera alias reaches the virtual camera when no real camera exists",
+  realCameras.length ? aliasProbe?.deviceId !== "vtc-virtual-camera" : aliasProbe?.deviceId === "vtc-virtual-camera",
+  JSON.stringify({ realCameras: realCameras.map((d) => d.label), probe: aliasProbe })
+);
+
 // 2. placeholder stream (no capture yet). The loopback peer works at whatever resolution the RTP
 // sender negotiates (Chrome starts reduced and ramps with motion), so assert a 16:9 frame.
 const idleSnap = await evaluate(page, "window.__vtcTest.start()");
@@ -485,6 +528,33 @@ record(
   JSON.stringify({ before: pipBefore, after: pipAfter, delta: pipDelta })
 );
 
+// Mirror output flips the whole composited frame, so the PiP bubble has to appear on the opposite
+// side of the same pixels.
+const MIRROR_NX = 1 - PIP.nx;
+const mirrorBefore = camRunning
+  ? await evaluate(page, `window.__vtcTest.sample(${MIRROR_NX}, ${PIP.ny})`)
+  : null;
+if (captureStarted) await evaluate(sw, "sendToOffscreen({ type: 'SET_MIRROR', mirror: true })");
+const mirrorAfter = camRunning
+  ? await waitFor(
+      async () => {
+        const px = await evaluate(page, `window.__vtcTest.sample(${MIRROR_NX}, ${PIP.ny})`);
+        return maxDelta(px, mirrorBefore) > 8 ? px : null;
+      },
+      { timeout: 6000, interval: 200 }
+    )
+  : null;
+const mirrorRight = camRunning
+  ? await evaluate(page, `window.__vtcTest.sample(${PIP.nx}, ${PIP.ny})`)
+  : null;
+const mirrorStatus = captureStarted ? await evaluate(sw, "getStatus()") : null;
+if (captureStarted) await evaluate(sw, "sendToOffscreen({ type: 'SET_MIRROR', mirror: false })");
+record(
+  "mirror output moves the bubble to the other side of the frame",
+  !captureStarted ? noGesture : camRunning ? !!mirrorAfter && maxDelta(mirrorRight, pipAfter) > 8 : false,
+  JSON.stringify({ before: mirrorBefore, after: mirrorAfter, right: mirrorRight, mirrorFlag: mirrorStatus?.mirror })
+);
+
 try {
   await sleep(1200); // let a frame with the bubble reach the page
   const shot = await page.send("Page.captureScreenshot", { format: "png" });
@@ -539,6 +609,33 @@ if (popupTarget) {
   );
   const popupErrors = popup.console.filter((line) => line.includes("exception"));
   record("popup has no uncaught exceptions", popupErrors.length === 0, popupErrors.join(" | "));
+
+  // The mirror checkbox is the one popup control whose effect lands in the compositor.
+  const mirrorChecked = await evaluate(
+    popup,
+    `(async () => {
+       const box = document.getElementById("mirrorToggle");
+       box.checked = true;
+       box.dispatchEvent(new Event("change"));
+       await new Promise((r) => setTimeout(r, 700));
+       return box.checked;
+     })()`
+  );
+  const mirrorState = await evaluate(sw, "getStatus()");
+  await evaluate(
+    popup,
+    `(async () => {
+       const box = document.getElementById("mirrorToggle");
+       box.checked = false;
+       box.dispatchEvent(new Event("change"));
+       await new Promise((r) => setTimeout(r, 500));
+     })()`
+  );
+  record(
+    "popup mirror toggle reaches the compositor",
+    mirrorChecked === true && mirrorState?.mirror === true,
+    JSON.stringify({ checked: mirrorChecked, statusMirror: mirrorState?.mirror })
+  );
 } else {
   record("popup renders and reads state from the offscreen document", false, "popup target not found");
 }
@@ -713,6 +810,16 @@ async function checkPlatform({ name, url, extraWait = 35000, gumCheck = false, a
     );
     const hasVirtual = Array.isArray(devices) && devices.includes(VIRTUAL_LABEL);
     record(`${name}: vtc-virtual-camera enumerates with its label`, hasVirtual, JSON.stringify(devices));
+
+    const camPermission = await evaluate(
+      conn,
+      `navigator.permissions.query({name:"camera"}).then(s => s.state).catch(e => "ERR " + e.message)`
+    );
+    record(
+      `${name}: camera permission reports granted (no prompt guard)`,
+      camPermission === "granted",
+      camPermission
+    );
 
     if (gumCheck) {
       const gum = await evaluate(conn, GUM_PROBE, { userGesture: true });

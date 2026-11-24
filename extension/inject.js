@@ -158,10 +158,8 @@
         };
 
         let delivered = false;
-        const deliver = (track) => {
-          if (delivered || !track) return;
-          delivered = true;
-          if (timer) clearTimeout(timer);
+
+        const handOver = (track) => {
           attachTrackOverrides(track);
           console.log("[VTC:inject] Virtual camera track received", requestId, track.readyState);
 
@@ -173,6 +171,34 @@
           };
 
           resolve(new MediaStream([track]));
+        };
+
+        // A real camera hands over an unmuted track with frames already flowing. A track straight off
+        // a fresh receiver is muted until media arrives, and some platforms treat that as a failed
+        // camera (Webex stops the track immediately after `connected`), so wait for the first frame.
+        const deliver = (track) => {
+          if (delivered || !track) return;
+          delivered = true;
+          if (timer) clearTimeout(timer);
+
+          if (!track.muted) {
+            handOver(track);
+            return;
+          }
+
+          let released = false;
+          const release = () => {
+            if (released) return;
+            released = true;
+            clearTimeout(cap);
+            track.removeEventListener("unmute", release);
+            handOver(track);
+          };
+          const cap = setTimeout(() => {
+            console.warn("[VTC:inject] Track still muted after 2.5s, handing it over anyway", requestId);
+            release();
+          }, 2500);
+          track.addEventListener("unmute", release);
         };
 
         // Chrome does not fire `ontrack` when the receiving transceiver was created locally before
@@ -259,6 +285,40 @@
     });
   }
 
+  /* ------------------------------------------------------------ permissions */
+
+  // The virtual camera never prompts, but Chrome still reports `prompt` for the page's camera
+  // permission. Platforms that refuse to call getUserMedia when it would prompt (Webex logs
+  // "Cantina_AvoidGetUserMediaPromptError ... avoidGetUserMediaPrompt is true") then never preview
+  // the camera and switch video off. Only the camera is overridden: microphone still prompts for real.
+  function patchPermissions() {
+    const permissions = navigator.permissions;
+    if (!permissions || typeof permissions.query !== "function") return;
+
+    const nativeQuery = permissions.query.bind(permissions);
+    function patchedQuery(descriptor) {
+      const result = nativeQuery(descriptor);
+      if (!descriptor || descriptor.name !== "camera") return result;
+      return result.then((status) => {
+        try {
+          Object.defineProperty(status, "state", { get: () => "granted", configurable: true });
+        } catch {}
+        return status;
+      });
+    }
+    patchedQuery.native = nativeQuery;
+
+    try {
+      permissions.query = patchedQuery;
+    } catch (err) {
+      console.warn("[VTC:inject] Could not patch navigator.permissions:", err.message);
+    }
+    try {
+      if (window.Permissions) Permissions.prototype.query = patchedQuery;
+    } catch {}
+    console.log("[VTC:inject] Camera permission reported as granted for this page");
+  }
+
   /* ------------------------------------------------------------ patched APIs */
 
   function patchedEnumerateDevices() {
@@ -266,7 +326,9 @@
     return Promise.resolve(nativeEnumerate.call(navigator.mediaDevices)).then((devices) => {
       const list = Array.from(devices);
       if (!list.some((device) => device.deviceId === VIRTUAL_ID)) {
-        list.push({
+        // First, not last: platforms that default to videos[0] (or a "default" alias resolved by
+        // position) never reach a camera appended to the end of the list.
+        list.unshift({
           deviceId: VIRTUAL_ID,
           kind: "videoinput",
           label: VIRTUAL_LABEL,
@@ -285,10 +347,24 @@
     });
   }
 
+  async function defaultAliasWithoutCamera(video) {
+    if (!video || typeof video !== "object") return false;
+    if (!flattenDeviceIds(video.deviceId, []).includes("default")) return false;
+    const devices = await patchedEnumerateDevices().catch(() => []);
+    // "default" means the real default webcam. Only stand in when the machine has no camera at all,
+    // which is the case where the request would otherwise fail with NotFoundError (Webex logs
+    // "No actualId found for alias device default. Using it as is" right before it gives up).
+    return !devices.some((device) => device.kind === "videoinput" && device.deviceId !== VIRTUAL_ID);
+  }
+
   async function patchedGetUserMedia(constraints) {
     const video = constraints && constraints.video;
-    if (!wantsVirtualCamera(video)) {
+    const virtualRequested = wantsVirtualCamera(video);
+    if (!virtualRequested && !(await defaultAliasWithoutCamera(video))) {
       return patchedGetUserMedia.native.call(navigator.mediaDevices, constraints);
+    }
+    if (!virtualRequested) {
+      console.log('[VTC:inject] "default" camera alias with no real camera; serving the virtual one');
     }
 
     console.log("[VTC:inject] Intercepted getUserMedia for the virtual camera", constraints);
@@ -338,6 +414,8 @@
   } catch (err) {
     console.warn("[VTC:inject] Could not patch navigator.mediaDevices:", err.message);
   }
+
+  patchPermissions();
 
   // Probe the relay once at install so the popup/tests can see whether the bridge is alive.
   waitForRelay().then((ok) => {

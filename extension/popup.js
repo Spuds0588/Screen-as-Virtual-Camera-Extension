@@ -102,6 +102,8 @@ async function initPopup() {
   const statusText = $("statusText");
   const camToggle = $("camToggle");
   const camHint = $("camHint");
+  const mirrorToggle = $("mirrorToggle");
+  const mirrorHint = $("mirrorHint");
   const tabBtn = $("tabBtn");
   const screenBtn = $("screenBtn");
   const stopBtn = $("stopBtn");
@@ -130,6 +132,18 @@ async function initPopup() {
     camHint.hidden = granted;
     if (active && status.camError) showError(`Webcam overlay unavailable (${status.camError})`);
   }
+
+  // The compositor watches this key, so no message round-trip is needed.
+  const storedMirror = await chrome.storage.local.get("mirrorOutput").catch(() => ({}));
+  mirrorToggle.checked = !!storedMirror?.mirrorOutput;
+  mirrorHint.hidden = !mirrorToggle.checked;
+
+  mirrorToggle.addEventListener("change", async () => {
+    mirrorHint.hidden = !mirrorToggle.checked;
+    // background.js persists the flag (the offscreen document has no chrome.storage) and forwards it.
+    await send({ type: "SET_MIRROR", mirror: mirrorToggle.checked }).catch((err) => showError(err.message));
+    refresh();
+  });
 
   camToggle.addEventListener("change", async () => {
     showError("");

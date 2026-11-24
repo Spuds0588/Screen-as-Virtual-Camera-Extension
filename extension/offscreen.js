@@ -28,6 +28,7 @@ let camVid = null;
 let camEnabled = false;
 let camError = null;
 
+let mirror = false;
 let starting = false;
 const peers = new Map(); // `${tabId}:${frameId}:${requestId}` -> { pc, pendingIce }
 
@@ -100,6 +101,14 @@ function pushFrame() {
 function drawFrame() {
   if (!ctx) return;
 
+  ctx.save();
+  // Optional horizontal flip. Meet/Zoom mirror your own self-view by CSS, so shared text reads
+  // backwards to you while everyone else sees it correctly; this flip trades that around.
+  if (mirror) {
+    ctx.translate(WIDTH, 0);
+    ctx.scale(-1, 1);
+  }
+
   ctx.fillStyle = "#0f172a";
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
@@ -115,6 +124,7 @@ function drawFrame() {
 
   drawPip();
   if (hasSource || camEnabled) drawLiveBadge();
+  ctx.restore();
 }
 
 function drawPlaceholder() {
@@ -399,6 +409,7 @@ async function handleOffscreenMessage(msg) {
         camEnabled,
         camError,
         peers: peers.size,
+        mirror,
         width: WIDTH,
         height: HEIGHT,
         frameRate: FPS
@@ -406,6 +417,11 @@ async function handleOffscreenMessage(msg) {
 
     case "START_CAPTURE":
       return startCapture(msg);
+
+    case "SET_MIRROR":
+      mirror = !!msg.mirror;
+      console.log("[VTC:offscreen] Mirror output", mirror ? "on" : "off");
+      return { ok: true, mirror };
 
     case "SET_CAM": {
       const result = await syncCam(!!msg.camEnabled);
@@ -431,6 +447,8 @@ async function handleOffscreenMessage(msg) {
   }
 }
 
+// No chrome.storage in this document (it is undefined here), so the background owns the setting and
+// pushes it in through SET_MIRROR.
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || msg.target !== "offscreen") return false;
   handleOffscreenMessage(msg)

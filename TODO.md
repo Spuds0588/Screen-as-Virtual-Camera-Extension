@@ -2,7 +2,7 @@
 
 Living checklist for v1. Update this file as work lands (move items between sections, keep it honest).
 
-Current state: `bash test/run-test.sh` → **41 passed, 0 failed, 0 skipped, exit 0** in a headed Chrome for
+Current state: `bash test/run-test.sh` → **51 passed, 0 failed, 0 skipped, exit 0** in a headed Chrome for
 Testing 158 with the extension loaded. Artifacts: `test/artifacts/results.json`, `harness-live.png`,
 `desktop-picker.png`, `meet-real.png` (the real Meet page the suite reached), plus
 `meet-join-permission-prompt.png` from the investigation of that page.
@@ -39,6 +39,23 @@ Testing 158 with the extension loaded. Artifacts: `test/artifacts/results.json`,
       a browser-level CDP session closed too early drops the camera permission override; `showError()` crashed in
       the picker/grant modes (all fixed)
 
+## Field reports (real meetings, not the harness)
+
+- **Google Meet — working.** Screenshots from a live call show the captured window as the camera feed with the
+  webcam PiP composited in the corner, badge `LIVE`, and both the captured tab and the PiP rendering in Meet.
+  Text looks mirrored **in your own self-view only** (Meet mirrors the local tile with CSS); remote participants
+  see it correctly. `test/artifacts/` keeps the harness proof; the user's call screenshots are the field proof.
+- **Webex (`web.webex.com`) — detected the camera, then turned video off.** Console evidence from that session:
+  the shim installed, Webex asked for the virtual camera six times, each peer reached `connected` with a live
+  track, and Webex called `track.stop()` immediately afterwards; Webex also logged
+  `Cantina_AvoidGetUserMediaPromptError … avoidGetUserMediaPrompt is true` and
+  `No actualId found for alias device default`. Three fixes shipped and are covered by the suite: camera
+  permission now reports `granted`, the `"default"` alias reaches the virtual camera when the machine has no real
+  webcam, and the track is handed over only once it is unmuted. **Not yet re-tested in a real Webex meeting.**
+- Resolution: the compositor is 1280x720 @ 30 fps, sender capped at 2.5 Mbps with `maintain-resolution`. Most
+  softness seen in the field is the platform's own downscale of a mostly-static screen; if a call looks soft,
+  check `chrome://webrtc-internals` on the sending side before changing the pipeline.
+
 ## Still needs a human (nothing else is blocked)
 
 - [ ] **Choose a desktop source and press Share.** `Share` is disabled until a source row is selected, the picker
@@ -46,13 +63,13 @@ Testing 158 with the extension loaded. Artifacts: `test/artifacts/results.json`,
       under `--ozone-platform=x11` the portal lists sources without thumbnails. Everything after that click
       (`START_CAPTURE` with `sourceType:"desktop"`, offscreen redemption, compositor, loopback) is the same code
       path the tab tests cover. Evidence: `test/artifacts/desktop-picker.png`.
-- [ ] **A real Google Meet call.** The real Meet app now loads under automation (200, "Check your meeting code",
-      shim + `vtc-virtual-camera` + a live `getUserMedia` track on that page), and Meet's own "Do you want people
-      to see and hear you in the meeting?" prompt renders — but a valid meeting code (i.e. a Google account) is
-      required to get past it into Meet's device-picker preview and a call. Joining with an account and picking
-      "Screen / Tab + Cam (Virtual)" is the one end-to-end check left; same for Microsoft Teams Web inside a live
-      call. The prompt itself is intermittent (it did not reappear on a later load), so the suite does not assert
-      it — `test/artifacts/meet-real.png` happens to have caught it.
+- [ ] **Re-test Webex / Zoom Web / Teams Web in a live meeting** after the Webex fixes (camera permission
+      `granted`, `"default"` alias fallback, unmute-before-hand-over). If Webex still drops the track, capture its
+      console plus `webrtc-internals` and compare the requested constraints with what the shim serves.
+- [x] **A real Google Meet call.** Done by the user on 2026-11-24: Meet offered "Screen / Tab + Cam (Virtual)",
+      the captured window reached the call with the webcam PiP composited in, and the badge showed `LIVE`. The
+      automation suite keeps the non-human half (shim + enumeration + a live `getUserMedia` track on the real
+      `/abc-defg-hij` page).
 
 ## Next
 
