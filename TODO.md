@@ -120,6 +120,22 @@ Testing 158 with the extension loaded. Artifacts: `test/artifacts/results.json`,
 - [ ] Keyboard-only flow + accessibility pass on the popup
 - [ ] Firefox `browser.*` port (out of scope: `tabCapture`/offscreen are Chrome-only today)
 
+### Considered, not built: un-flip our own self-view
+
+Meetings mirror the local tile with CSS, so the presenter's own preview reads backwards while recipients get the
+correct orientation (confirmed on Meet/Jitsi; Jitsi does it with the `flipVideoX` class). Un-flipping it locally is
+possible without touching the feed and without platform selectors: `inject.js` already holds the `MediaStream` it
+returned, so our tile is the `<video>` whose `srcObject` — or one of whose tracks — is that stream. For each match,
+read the net horizontal scale from `getComputedStyle()` on the element and its ancestors; when it is negative,
+counter-flip with an inline `!important` transform (inline beats an author stylesheet `!important`) and re-apply on
+DOM mutations. Rendering stays local, so recipients are unaffected, and it needs no manifest or permission change.
+
+Why it is not v1: the mirror is deliberate UX (your own gestures feel natural), so it needs its own toggle, not a
+replacement for "Mirror output"; each platform's DOM still needs a live-call check (shadow roots, tile re-render,
+some platforms may reuse/clone the track); and a platform that flips pixels rather than CSS would be uncovered. It
+must degrade to "do nothing" when no net flip is detected. If it ships, the landing page's "Why does my own video
+look mirrored?" FAQ changes too.
+
 ## Distribution / landing page
 
 - [x] GitHub Pages home page at the repo root (`index.html`): blue-and-white minimalism, beta status stated up
