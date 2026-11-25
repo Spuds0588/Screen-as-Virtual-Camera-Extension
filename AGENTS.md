@@ -73,6 +73,9 @@ test/                 dev-only harness (never shipped)
   driver.mjs          bun + CDP driver for a headed Chrome
   run-test.sh         one-shot: build, serve, launch headed Chrome, run driver
   harness.html        stand-in "meeting platform" page used by the driver
+index.html            GitHub Pages landing page (self-contained: inline CSS, JSON-LD)
+robots.txt            crawl rules for the Pages site
+sitemap.xml           single-URL sitemap for the Pages site
 dist/                 generated, git-ignored
 ```
 
@@ -224,3 +227,26 @@ If you cannot run a headed browser (no `DISPLAY`), say so explicitly in your rep
   blocked part is the meeting id, not the extension. Zoom requests the camera with an explicit `deviceId`, so it
   uses the device list rather than the `"default"` alias rule.
 - `dist/` is generated; never edit it by hand.
+
+## Landing page (GitHub Pages)
+
+GitHub Pages is enabled for `main` at the repository **root** (not `/docs`), so the home page is the root
+`index.html`. Keep it one self-contained file: inline CSS, inline SVG favicon, no build step, no external fonts or
+scripts, no `docs/` folder. It has to work served as plain static files from the repo root.
+
+- Audience is presenters who are not host or co-host and so cannot use the meeting's screen share. Copy answers
+  their question ("can I present at all?") instead of describing the architecture.
+- **Beta status is load-bearing.** "Beta" appears in the header pill, the hero notice and the platform table, and
+  the copy says the Chrome Web Store listing comes after every primary platform passes a live call. Do not
+  soften that until a store listing actually exists.
+- The platform table must match the verdicts in TODO.md/HISTORY.md: a platform moves from "Join pages" to
+  "Live meeting"/"Live call" only when a real meeting produced the recorded evidence. No store availability, user
+  counts, or unmeasured platforms.
+- SEO/AEO is deliberate: one `<h1>`, question-shaped `<h3>`s each answered in one paragraph, a status table,
+  `SoftwareApplication` + `WebSite` + `FAQPage` JSON-LD kept in sync with the visible FAQ text, canonical URL,
+  OG/Twitter tags, plus `robots.txt` and `sitemap.xml` at the root.
+- Blue-and-white minimalism: `#1d4ed8` on white with slate text and hairline rules, no images. The hero "meeting
+  mock" (LIVE badge, slide, webcam bubble, camera picker) is CSS only, so there are no screenshot assets to
+  maintain — and `test/artifacts/` is gitignored anyway.
+- Live at https://spuds0588.github.io/Screen-as-Virtual-Camera-Extension/ — published from `main`, so a push
+  deploys. Confirm with `gh api repos/Spuds0588/Screen-as-Virtual-Camera-Extension/pages` after pushing.

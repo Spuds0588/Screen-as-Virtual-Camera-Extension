@@ -120,6 +120,17 @@ Testing 158 with the extension loaded. Artifacts: `test/artifacts/results.json`,
 - [ ] Keyboard-only flow + accessibility pass on the popup
 - [ ] Firefox `browser.*` port (out of scope: `tabCapture`/offscreen are Chrome-only today)
 
+## Distribution / landing page
+
+- [x] GitHub Pages home page at the repo root (`index.html`): blue-and-white minimalism, beta status stated up
+      front, verified-platform table, privacy section, presenter FAQ. `robots.txt`, `sitemap.xml`, canonical +
+      OG/Twitter tags, and `SoftwareApplication` + `WebSite` + `FAQPage` JSON-LD for SEO/AEO.
+- [ ] Chrome Web Store listing — **only after every primary target passes a live call.** Blocked on the open
+      items above (Zoom Web meeting id, Webex second participant) plus a live call on Teams Web and Whereby.
+- [ ] Store assets for that listing: 128×128 icon, screenshots, promo tile. The extension still has no `icons`
+      key, so Chrome shows a generic puzzle piece; the landing page uses an inline SVG favicon instead.
+- [ ] Keep the landing page's platform table in step with HISTORY.md whenever a verdict changes.
+
 ## Open questions
 
 - [ ] Do Meet's iframes (blob: frames, `all_frames: true`) pick up the patched `MediaDevices`, or does only the

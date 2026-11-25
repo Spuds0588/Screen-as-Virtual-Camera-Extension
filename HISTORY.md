@@ -3,6 +3,26 @@
 Reverse-chronological log of what actually happened. Keep entries short and factual: what changed, what was
 verified, what broke.
 
+## 2026-11-25 — landing page for the beta (GitHub Pages, SEO + AEO)
+
+GitHub Pages is enabled for `main` at the repository root, so the home page is a self-contained `index.html`
+there — inline CSS, inline SVG favicon, no build step, no external assets, no `docs/` site.
+
+- Audience: presenters who are not host or co-host and therefore cannot use the meeting's screen share. The
+  hero, the three "why" cards and the FAQ answer that person's question — "can I present at all?" — rather than
+  describing the pipeline.
+- Beta status is stated three times (header pill, hero notice, platform table), and the copy says the Chrome Web
+  Store listing happens only after every primary platform passes a live call. Nothing claims the extension is
+  installable from the store today.
+- The platform table mirrors the measured verdicts: Google Meet and Jitsi "Live call", Webex "Live meeting"
+  (with the solo-meeting upload caveat), Zoom Web / Teams Web / Whereby "Join pages" with a live call pending.
+- SEO/AEO: title and description carry the searchable phrases ("virtual camera", "share a tab as camera",
+  "present without host rights"), plus canonical URL, OG/Twitter tags, one `<h1>`, question-shaped headings each
+  answered directly, and JSON-LD for `SoftwareApplication`, `WebSite` and a nine-question `FAQPage` whose text
+  matches the visible FAQ. Added `robots.txt` and `sitemap.xml` at the root.
+- Design: blue (`#1d4ed8`) and white, slate text, hairline rules, no images. The hero "meeting mock" (LIVE
+  badge, slide, webcam bubble, camera picker showing "Screen / Tab + Cam (Virtual)") is CSS only.
+
 ## 2026-11-24 — Webex verified in a live meeting; Zoom Web blocked on a meeting ID (52 pass / 0 fail / 0 skip)
 
 ### Webex: a real meeting with no account (works)
